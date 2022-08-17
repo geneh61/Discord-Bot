@@ -130,11 +130,10 @@ def main():
             try:
                 users = await get_user_stats()
                 for user in users:
-                    for userid in user:
-                        userid["balance"] += 1000
-                        print("success")
+                    user["balance"] += 1000
+                    print("success")
                 with open("storedbets.json", "w") as f:
-                        json.dump(users, f)
+                    json.dump(users, f)
                 await asyncio.sleep(15)
             except Exception as e:
                 print(e)
