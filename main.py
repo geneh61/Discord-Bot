@@ -8,7 +8,6 @@ import requests
 from bs4 import BeautifulSoup
 from discord.ext import commands
 from dotenv import load_dotenv
-from pysbr import *
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
