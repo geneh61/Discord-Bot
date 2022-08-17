@@ -18,10 +18,17 @@ from selenium.webdriver.chrome.options import Options
 
 
 def getNextUFC():
-    PATH = "C:\Program Files (x86)\chromedriver.exe"
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
-    driver = webdriver.Chrome(PATH, options=options)
+    #PATH = "C:\Program Files (x86)\chromedriver.exe"
+    #options = webdriver.ChromeOptions()
+    #options.add_argument('--headless')
+    #driver = webdriver.Chrome(PATH, options=options)
+
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--no-sandbox")
+    driver = webdriver.Chrome(executable_path=os.environ.get("CHROMEDRIVER_PATH"), chrome_options=chrome_options)
 
     driver.get("https://www.bestfightodds.com/")
 
@@ -116,6 +123,20 @@ def main():
             em.add_field(name = "Average Underdog(+) Odds Taken (Adjusted)", value = users[str(ctx.author.id)]["underOdds"])
 
         await ctx.send(embed = em)
+
+    async def weeklyPay():
+        try:
+            users = await get_user_stats()
+            for user in users:
+                for userid in user:
+                    userid["balance"] += 1000
+            with open("storedbets.json", "w") as f:
+                    json.dump(users, f)
+            await asyncio.sleep(604800)
+        except Exception as e:
+            print(e)
+            await asyncio.sleep(604800)
+        return
 
 
     async def updateUFC():
