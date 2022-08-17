@@ -125,19 +125,20 @@ def main():
         await ctx.send(embed = em)
 
     async def weeklyPay():
-        try:
-            users = await get_user_stats()
-            for user in users:
-                for userid in user:
-                    userid["balance"] += 1000
-            with open("storedbets.json", "w") as f:
-                    json.dump(users, f)
-            await asyncio.sleep(604800)
-        except Exception as e:
-            print(e)
-            await asyncio.sleep(604800)
-        return
-
+        await client.wait_until_ready()
+        while not client.is_closed():
+            try:
+                users = await get_user_stats()
+                for user in users:
+                    for userid in user:
+                        userid["balance"] += 1000
+                        print("success")
+                with open("storedbets.json", "w") as f:
+                        json.dump(users, f)
+                await asyncio.sleep(15)
+            except Exception as e:
+                print(e)
+                await asyncio.sleep(30)
 
     async def updateUFC():
         await client.wait_until_ready()
