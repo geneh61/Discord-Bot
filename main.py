@@ -14,21 +14,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
 
-
-
-
 def getNextUFC():
-    #PATH = "C:\Program Files (x86)\chromedriver.exe"
-    #options = webdriver.ChromeOptions()
-    #options.add_argument('--headless')
-    #driver = webdriver.Chrome(PATH, options=options)
-
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN")
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--no-sandbox")
-    driver = webdriver.Chrome(executable_path=os.environ.get("CHROMEDRIVER_PATH"), chrome_options=chrome_options)
+    PATH = "C:\Program Files (x86)\chromedriver.exe"
+    chrome_options = Options()
+    chrome_options.add_argument('--headless')
+    driver = webdriver.Chrome(PATH, options=chrome_options)
 
     driver.get("https://www.bestfightodds.com/")
 
@@ -124,20 +114,14 @@ def main():
 
         await ctx.send(embed = em)
 
-    async def weeklyPay():
-        await client.wait_until_ready()
-        while not client.is_closed():
-            try:
-                users = await get_user_stats()
-                for user in users:
-                    user["balance"] += 1000
-                    print("success")
-                with open("storedbets.json", "w") as f:
-                    json.dump(users, f)
-                await asyncio.sleep(15)
-            except Exception as e:
-                print(e)
-                await asyncio.sleep(30)
+    @client.command()
+    async def payout(ctx, argument):
+        users = await get_user_stats()
+        for user in users.keys():
+            users[user]["balance"] += int(argument)
+            await ctx.send(f'{int(argument)} has been paid out to all users.')
+        with open("storedbets.json", "w") as f:
+            json.dump(users, f)
 
     async def updateUFC():
         await client.wait_until_ready()
