@@ -1,3 +1,4 @@
+from operator import is_
 import os
 import time
 import json
@@ -5,14 +6,21 @@ from copy import copy
 import discord
 import asyncio
 import requests
+import unicodedata
 from bs4 import BeautifulSoup
 from discord.ext import commands
+from discord.ext import tasks
 from dotenv import load_dotenv
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
+global is_active
+is_active = 0
+
+def simplify(s):
+	return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
 
 def getNextUFC():
     PATH = "C:\Program Files (x86)\chromedriver.exe"
@@ -119,7 +127,7 @@ def main():
         users = await get_user_stats()
         for user in users.keys():
             users[user]["balance"] += int(argument)
-            await ctx.send(f'{int(argument)} has been paid out to all users.')
+        await ctx.send(f'{int(argument)} has been paid out to all users.')
         with open("storedbets.json", "w") as f:
             json.dump(users, f)
 
@@ -137,7 +145,7 @@ def main():
                 await asyncio.sleep(3600)
     
     async def payoutUFC():
-        ctx = client.get_channel(id=1004174134579830815) # channel id
+        ctx = client.get_channel(id=1009272522736410714) # channel id
         users = await get_user_stats()
         userscopy = await get_user_stats()
         copytwo = await get_user_stats()
@@ -147,7 +155,6 @@ def main():
 
 
                     if fighter.find("+") != -1:
-                        print("has plus")
                         cancelled = []
                         cancelledodds = []
                         fighterlist = fighter.split("+")
@@ -182,13 +189,41 @@ def main():
                             amerodds = ((amerodds - 1) * 100)
                         else:
                             amerodds = (-100 / (amerodds - 1))
-
+                        added_odds = []
+                        for eodds in range(1, fighter.count('+') + 2):
+                            if list(users[user]["bets"]["events"][prev_event][fighter].keys())[-eodds].lstrip('-').isdigit() == True:
+                                added_odds.append(list(users[user]["bets"]["events"][prev_event][fighter].keys())[-eodds])
+                            else:
+                                break
+                        added_wagers = []
+                        added_decimal = []
+                        added_oddsB = []
+                        for i in added_odds:
+                            added_wagers.append(users[user]["bets"]["events"][prev_event][fighter][i])
+                        for a in added_odds:
+                            temp = oddsToDecimal(int(a))
+                            added_decimal.append(temp / newodds)
+                        for i in added_decimal:
+                            if i >= 2:
+                                added_oddsB.append((i - 1) * 100)
+                            else:
+                                added_oddsB.append(-100 / (i - 1))
+                                
                         if ufcparlayresult == True and len(cancelled) > 0:
                             em.add_field(name = "Parlay Result", value = "Won")
                             em.add_field(name = "Odds Taken", value = round(amerodds)) #need to define odds
                             em.add_field(name = "Wagered", value = bet)
                             em.add_field(name = "Payout", value = round(bet * decimal / newodds))
                             em.add_field(name = "Profit/Loss", value = round((bet * decimal / newodds) - bet))
+
+                            for i in range(len(added_odds)):
+                                em.add_field(name = "Additional Odds Taken", value = added_oddsB[i])
+                                em.add_field(name = "Additional Wagered", value = added_wagers[i])
+                                em.add_field(name = "Payout", value = round(added_wagers[i] * added_decimal[i] / newodds))
+                                copytwo[user]["wonBets"] += 1
+                                copytwo[user]["totalWon"] += round(added_wagers[i] * added_decimal[i] / newodds)
+                                copytwo[user]["balance"] += round(added_wagers[i] * added_decimal[i] / newodds)
+
                             copytwo[user]["wonBets"] += 1
                             copytwo[user]["totalWon"] += round(bet * decimal / newodds)
                             copytwo[user]["balance"] += round(bet * decimal / newodds)
@@ -200,12 +235,29 @@ def main():
                             em.add_field(name = "Payout", value = round(bet * decimal))
                             em.add_field(name = "Profit/Loss", value = round(bet * decimal - bet))
 
-                        elif ufcparlayresult == False and len(cancelled) < fighter.count("+") - 1:
+                            for i in range(len(added_odds)):
+                                em.add_field(name = "Additional Odds Taken", value = added_oddsB[i])
+                                em.add_field(name = "Additional Wagered", value = added_wagers[i])
+                                em.add_field(name = "Payout", value = round(added_wagers[i] * added_decimal[i] / newodds))
+                                copytwo[user]["wonBets"] += 1
+                                copytwo[user]["totalWon"] += round(added_wagers[i] * added_decimal[i] / newodds)
+                                copytwo[user]["balance"] += round(added_wagers[i] * added_decimal[i] / newodds)
+                            
+                            copytwo[user]["wonBets"] += 1
+                            copytwo[user]["totalWon"] += round(bet * decimal / newodds)
+                            copytwo[user]["balance"] += round(bet * decimal / newodds)
+
+                        elif ufcparlayresult == False and len(cancelled) < fighter.count("+") + 1:
                             em.add_field(name = "Parlay Result", value = "Lost")
                             em.add_field(name = "Odds Taken", value = round(odds))
                             em.add_field(name = "Wagered", value = bet)
                             em.add_field(name = "Payout", value = 0)
                             em.add_field(name = "Profit/Loss", value = -abs(bet))
+
+                            for i in range(len(added_odds)):
+                                em.add_field(name = "Additional Odds Taken", value = added_oddsB[i])
+                                em.add_field(name = "Additional Wagered", value = added_wagers[i])
+                                em.add_field(name = "Payout", value = 0)
 
                         else: # all parlay cancelled
                             em.add_field(name = "Parlay Result", value = "Cancelled")
@@ -215,23 +267,42 @@ def main():
                             em.add_field(name = "Profit/Loss", value = 0)
                             copytwo[user]["totalWagered"] -= bet
                             copytwo[user]["numBets"] -= 1
+                            copytwo[user]["balance"] += bet
                             if int(odds) < 0:
                                 copytwo[user]["overWagered"] -= bet
                             else:
                                 copytwo[user]["underWagered"] -= bet
 
+                            for i in range(len(added_odds)):
+                                em.add_field(name = "Additional Odds Taken", value = added_oddsB[i])
+                                em.add_field(name = "Additional Wagered", value = added_wagers[i])
+                                em.add_field(name = "Payout", value = added_wagers[i])
+                                copytwo[user]["numBets"] -= 1
+                                copytwo[user]["totalWagered"] -= round(added_wagers[i])
+                                copytwo[user]["balance"] += round(added_wagers[i])
+                                if int(added_oddsB[i]) < 0:
+                                    copytwo[user]["overWagered"] -= int(added_oddsB[i])
+                                else:
+                                    copytwo[user]["underWagered"] -= int(added_oddsB[i])
+
                         copytwo[user]["returnRate"] = round(float(copytwo[user]["totalWon"]) / float(copytwo[user]["totalWagered"]), 2) * 100
                         copytwo[user]["winrate"] = round(float(copytwo[user]["wonBets"]) / float(copytwo[user]["numBets"]), 2) * 100
+
 
                         if len(userscopy[user]["bets"]["events"][prev_event][fighter]) == 2 + fighter.count('+'):
                             del userscopy[user]["bets"]["events"][prev_event][fighter]
                             await ctx.send(embed = em)
                             continue
 
-                        for x in range(len(fighter.count('+')) - 1):
-                            delindex = list(userscopy[user]["bets"]["events"][prev_event][fighter]).keys()[x]
+                        while len(userscopy[user]["bets"]["events"][prev_event][fighter].keys()) != 0:
+                            delindex = list(userscopy[user]["bets"]["events"][prev_event][fighter].keys())[0]
                             del userscopy[user]["bets"]["events"][prev_event][fighter][delindex]
+
+                        if len(userscopy[user]["bets"]["events"][prev_event][fighter]) == 0:
+                            del userscopy[user]["bets"]["events"][prev_event][fighter]
+
                         await ctx.send(embed = em)
+                        continue
 
 
                     for odds in users[user]["bets"]["events"][prev_event][fighter]:
@@ -287,7 +358,7 @@ def main():
             with open("storedbets.json", "w") as f:
                 json.dump(copytwo, f)
         else:
-            await ctx.send("testnot")
+            return
 
                 
 
@@ -299,6 +370,8 @@ def main():
             newaccount = {
                 str(user.id):{
                     "balance": 1000,
+                    "left": 0,
+                    "right": 0,
                     "numBets": 0,
                     "wonBets": 0,
                     "winrate": 0,
@@ -416,20 +489,204 @@ def main():
             else:
                 time = time.split(' ')
                 output += (fighterLeft+" defeated "+fighterRight+" via "+result+" at "+time[0]+" of "+time[1]+" "+time[2] +"\n")
-            ufcwinner.append(fighterLeft)
-            ufcloser.append(fighterRight)
+            ufcwinner.append(simplify(fighterLeft))
+            ufcloser.append(simplify(fighterRight))
         global ufclist
         ufclist = output.split('\n')
         # fighterleft = winner
         # fighterright = loser
+
+    @tasks.loop(seconds = 5)
+    async def updatetwitchbet(initial, left, right):
+        try:
+            global is_active, embed_dict, seconds
+            users = await get_user_stats()
+            totalleft = 0
+            totalright = 0
+            total = 0
+            for user in users.keys():
+                totalleft += users[user]["left"]
+                totalright += users[user]["right"]
+                total = totalleft + totalright
+            seconds -= 5
+            for field in embed_dict["fields"]:
+                if field['name'] == "Time remaining":
+                    if seconds <= 0:
+                        field["value"] = "Bets Closed"
+                    else:
+                        field["value"] = int(field["value"])
+                        field["value"] -= 5
+                if field['name'] == left:
+                    field["value"] = totalleft
+                if field['name'] == right:
+                    field['value'] = totalright
+                if field['name'] == 'left side payout':
+                    if total > 0 and totalleft > 0:
+                        field['value'] = str(round((1 / (totalleft / total)), 2))
+                if field['name'] == 'right side payout':
+                    if total > 0 and totalright > 0:
+                        field['value'] = str(round((1 / (totalright / total)), 2))
+
+            embed = discord.Embed.from_dict(embed_dict)
+            await initial.edit(embed = embed)
+            if seconds <= 0:
+                is_active = 2
+                updatetwitchbet.stop()
+            else:
+                is_active = 1
+        except Exception as e:
+            print(e)
+
         
 
+    @client.command()
+    async def custombet(ctx, time: int, *, title):
+        """Creates custom bet (!createbet {seconds active} {title of bet})"""
+        global is_active
+        if is_active == 1:
+            await ctx.send("There is already a bet active")
+            return
+        elif is_active == 2:
+            await ctx.send("There is an unresolved bet")
+            return
+        is_active = 1
+        global seconds
+        seconds = int(time)
+        em = discord.Embed(title = title)
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel
+        await ctx.send("What is the left side bet")
+        msg = await client.wait_for("message", check = check)
+        left = msg.content
+        await ctx.send("What is the right side bet")
+        msg = await client.wait_for("message", check=check)
+        right = msg.content
+        em.add_field(name = left, value = 0)
+        em.add_field(name = right, value = 0)
+        em.add_field(name = "left side payout", value = 0)
+        em.add_field(name = "right side payout", value = 0)
+        em.add_field(name = "Time remaining", value = int(time))
+        initial = await ctx.send(embed = em)
+        global embed_dict
+        embed_dict = em.to_dict()
+        await asyncio.sleep(5)
+        updatetwitchbet.start(initial, left, right)
+        """while is_active != 0:
+            embed_dict, seconds = await updatetwitchbet(initial, embed_dict, seconds)"""
+        
+            
+    @client.command()
+    async def left(ctx, amount: int):
+        """Bets on left side of created bet (!left {wager amount})"""
+        global is_active
+        if is_active != 1:
+            await ctx.send("Bet is not open.")
+            return
+        if amount <= 0:
+            await ctx.send("Cannot bet less than 1.")
+            return
+        users = await get_user_stats()
+        for user in users.keys():
+            if user == str(ctx.author.id):
+                if amount > users[user]["balance"]:
+                    await ctx.send("You cannot wager more than your balance.")
+                    return
+                users[user]["left"] += amount
+                users[user]["balance"] -= amount
+        with open("storedbets.json", "w") as f:
+            json.dump(users, f)
 
+    @client.command()
+    async def right(ctx, amount: int):
+        """Bets on right side of created bet (!right {wager amount})"""
+        global is_active
+        if is_active != 1:
+            await ctx.send("Bet is not open.")
+            return
+        if amount <= 0:
+            await ctx.send("Cannot bet less than 1.")
+            return
+        users = await get_user_stats()
+        for user in users.keys():
+            if user == str(ctx.author.id):
+                if amount > users[user]["balance"]:
+                    await ctx.send("You cannot wager more than your balance.")
+                    return
+                users[user]["right"] += amount
+                users[user]["balance"] -= amount
+        with open("storedbets.json", "w") as f:
+            json.dump(users, f)
+
+    @client.command()
+    async def resolve(ctx, result):
+        """Resolves created bet (!resolve {left, right, cancel})"""
+        global is_active
+        if is_active == 0:
+            await ctx.send("There is no active bet to resolve")
+            return
+        result = result.lower()
+        totalleft = 0
+        totalright = 0
+        users = await get_user_stats()
+        for user in users.keys():
+            totalleft += users[user]["left"]
+            totalright += users[user]["right"]
+            total = totalleft + totalright
+        for user in users.keys():
+            if result == "left":
+                if is_active == 1:
+                    await ctx.send("Cannot resolve ongoing bet")
+                    return
+                left = users[user]["left"]
+                users[user]["balance"] += round((1 / (totalleft / total)), 2) * left
+                users[user]["left"] = 0
+                users[user]["right"] = 0
+                if left != 0:
+                    await ctx.send(f'{round((1 / (totalleft / total)), 2) * left} paid out to @{await client.fetch_user(int(user))}')
+            elif result == "right":
+                if is_active == 1:
+                    await ctx.send("Cannot resolve ongoing bet")
+                    return
+                right = users[user]["right"]
+                users[user]["balance"] += round((1 / (totalright / total)), 2) * right
+                users[user]["left"] = 0
+                users[user]["right"] = 0
+                if right != 0:
+                    await ctx.send(f'{round((1 / (totalright / total)), 2) * right} paid out to @{await client.fetch_user(int(user))}')
+            elif result == "cancel" or totalleft == 0 or totalright == 0:
+                left = users[user]["left"]
+                right = users[user]["right"]
+                leftright = left + right
+                users[user]["balance"] += left
+                users[user]["balance"] += right
+                users[user]["left"] = 0
+                users[user]["right"] = 0
+                if leftright != 0:
+                    await ctx.send(f'{leftright} returned to @{await client.fetch_user(int(user))}')
+            else:
+                await ctx.send("Invalid parameter")
+                return
+        with open("storedbets.json", "w") as f:
+            json.dump(users, f)
+        is_active = 0
 
     @client.command()
     async def ufcpast(ctx):
         """Prints results of past ufc event."""
         await ctx.send("\n".join(ufclist))
+        return
+
+    @client.command()
+    async def winners(ctx):
+        await ctx.send(ufcwinner)
+
+    @client.command()
+    async def losers(ctx):
+        await ctx.send(ufcloser)
+
+    @client.command()
+    async def manualbetpayout(ctx):
+        await payoutUFC()
         return
 
     @client.command()
@@ -603,7 +860,6 @@ def main():
         if isinstance(error, commands.MissingRequiredArgument):
             await ctx.send("You must enter all parameters.")
 
-    
     client.loop.create_task(updateUFC())
     client.run(os.getenv("TOKEN"))
 
